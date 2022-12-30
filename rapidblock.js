@@ -179,6 +179,59 @@ const deleteBlock = (id) => {
         req.end()
     })
 }
+const getBlockImpact = (domain) => {
+    const url = new URL("api/v1/admin/measures",instance)
+    return new Promise((resolve,reject)=>{
+        let opt = {
+            method: 'POST',
+            headers: {
+                'authorization': `Bearer ${api_key}`,
+                'content-type': 'application/json',
+            }
+        }
+        let req = https.request(url,opt,(res) => {
+            let body = "";
+
+            res.on("data", (chunk) => {
+                body += chunk;
+            });
+
+            res.on("end", () => {
+                try {
+                    let json = JSON.parse(body);
+                    // do something with JSON
+                    resolve(json)
+                } catch (error) {
+                    console.error(error.message);
+                    reject(error.message)
+                };
+            });
+
+        }).on("error", (error) => {
+            console.error(error.message);
+            reject()
+        })
+        const today = (()=>{
+            var d = new Date(),
+                month = '' + (d.getMonth() + 1),
+                day = '' + d.getDate(),
+                year = d.getFullYear();
+            if (month.length < 2) 
+                month = '0' + month;
+            if (day.length < 2) 
+                day = '0' + day;
+            return [year, month, day].join('-');
+        })()
+        req.write(JSON.stringify({
+            "keys": ["instance_follows","instance_followers"],
+            "start_at": today,
+            "end_at": today,
+            "instance_follows":{"domain":`${domain}`},
+            "instance_followers":{"domain":`${domain}`}
+        }))
+        req.end();
+    })
+}
 
 const getRapidBlockSig = () => {
     const url = new URL("https://rapidblock.org/blocklist.json.sig")
@@ -457,6 +510,8 @@ getRapidBlocks().then(rapid=>{
                 }
 
                 console.log('+',domain,':',rapid.blocks[domain].reason)
+                const impact = await getBlockImpact(domain)
+                console.log(` ${impact.find(s=>s.key=="instance_followers").total} followers & ${impact.find(s=>s.key=="instance_follows").total} follows`)
                 if (jmList.find(s=>s.domain == domain)) {
                     console.log("*** This is a listed server. ***")
                 }
