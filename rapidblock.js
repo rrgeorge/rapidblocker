@@ -1,7 +1,7 @@
 #!/usr/bin/env -S node --no-warnings
 
 // Your instance url
-const instance = new URL("")
+const instance = new URL("https://localhost")
 // Your api key with admin:read & admin:write perms
 const api_key = ""
 
@@ -9,6 +9,9 @@ const fs = require('fs');
 const https = require('https');
 const crypto = require('crypto');
 const readline = require('readline');
+const { Readable } = require('stream');
+
+const ua = 'rapidblocker/1.0'
 
 var mod = false
 var add = false
@@ -74,7 +77,8 @@ const getBlocks = (min=0,limit=200) => {
         url.searchParams.append('min_id',min.toString())
         let opt = {
             headers: {
-                'authorization': `Bearer ${api_key}`
+                'authorization': `Bearer ${api_key}`,
+                'user-agent': ua
             }
         }
         let req = https.request(url,opt,(res) => {
@@ -108,7 +112,8 @@ const setBlock = (domain,reason,notes,id=null) => {
             method: (id)? "PUT":"POST",
             headers: {
                 'authorization': `Bearer ${api_key}`,
-                'content-type': 'application/json'
+                'content-type': 'application/json',
+                'user-agent': ua
             }
         }
         let req = https.request(url,opt,(res) => {
@@ -187,6 +192,7 @@ const getBlockImpact = (domain) => {
             headers: {
                 'authorization': `Bearer ${api_key}`,
                 'content-type': 'application/json',
+                'user-agent': ua
             }
         }
         let req = https.request(url,opt,(res) => {
@@ -236,7 +242,12 @@ const getBlockImpact = (domain) => {
 const getRapidBlockSig = () => {
     const url = new URL("https://rapidblock.org/blocklist.json.sig")
     return new Promise((resolve,reject)=>{
-        let req = https.request(url,(res) => {
+        const opt = {
+            headers: {
+                'user-agent': ua
+            }
+        }
+        let req = https.request(url,opt,(res) => {
             let body = "";
 
             res.on("data", (chunk) => {
@@ -262,7 +273,12 @@ const getRapidBlockSig = () => {
 const getRapidBlockPub = () => {
     const url = new URL("https://rapidblock.org/rapidblock.pub")
     return new Promise((resolve,reject)=>{
-        let req = https.request(url,(res) => {
+        const opt = {
+            headers: {
+                'user-agent': ua
+            }
+        }
+        let req = https.request(url,opt,(res) => {
             let body = "";
 
             res.on("data", (chunk) => {
@@ -290,7 +306,12 @@ const getRapidBlocks = () => {
     if (verbose) console.log("Retrieving blocklist from rapidblock.org...")
     const url = new URL("https://rapidblock.org/blocklist.json")
     return new Promise((resolve,reject)=>{
-        let req = https.request(url,(res) => {
+        const opt = {
+            headers: {
+                'user-agent': ua
+            }
+        }
+        let req = https.request(url,opt,(res) => {
             let data = "";
 
             res.on("data", (chunk) => {
@@ -330,7 +351,12 @@ const joinMastodonServers = () => {
     if (verbose) console.log("Retrieving listed servers from joinmastodon.org...")
     const url = new URL("https://api.joinmastodon.org/servers")
     return new Promise((resolve,reject)=>{
-        let req = https.request(url,(res) => {
+        const opt = {
+            headers: {
+                'user-agent': ua
+            }
+        }
+        let req = https.request(url,opt,(res) => {
             let data = "";
 
             res.on("data", (chunk) => {
@@ -361,7 +387,8 @@ const birdSiteServers = () => {
         let opt = {
             method: "POST",
             headers: {
-                'content-type': 'application/json'
+                'content-type': 'application/json',
+                'user-agent': ua
             }
         }
         let req = https.request(url,opt,(res) => {
@@ -408,89 +435,119 @@ const getAllBlocks = async ()=>{
     }
     return blocks
 }
+const getRobots = (url) => {
+    if (verbose) console.log(`Getting robots.txt ${url}...`)
+    return new Promise((resolve,reject)=>{
+        let opt = {
+            headers: {
+                'user-agent': ua
+            }
+        }
+        let req = https.request(url,opt,(res) => {
+            let data = "";
+            if (res.statusCode < 200 || res.statusCode >= 300) {
+                reject(res.statusCode)
+            }
+            res.on("data", (chunk) => {
+                data += chunk;
+            });
 
-getRapidBlocks().then(rapid=>{
-    getAllBlocks().then(async blocks=>{
-        const jmList = await joinMastodonServers();
-        if (birdsites) {
-            const bbList = await birdSiteServers();
-            for (const bb of bbList.data.nodes) {
-                const domain = bb.domain
-                const block = blocks.find(block=>block.domain==domain)
-                if (!block) {
-                    const isSub = blocks.find(b=>domain.endsWith(`.${b.domain}`))
-                    if (isSub?.severity) {
-                        if (verbose) {
-                            console.log(':',domain,`(birdsitelive)`,': already blocked under',isSub.domain,':',isSub.severity,isSub.public_comment)
-                        }
-                        continue
-                    }
-                    console.log('+',domain,':',"birdsitelive")
-                    if (jmList.find(s=>s.domain == domain)) {
-                        console.log("*** This is a listed server. ***")
-                    }
-                    const ans = (add||bsadd)? 'y':await askQuestion("Do you want to add this entry (y/N)? ");
-                    if (ans.toLowerCase() == 'y') {
-                        await (new Promise(resolve => setTimeout(resolve, 1000)))
-                        const r = await setBlock(domain,"Third-party bots","birdsitelive")
-                        if (r.error) {
-                            console.log('!',domain,':',r.error,r.existing_domain_block?.domain,r.existing_domain_block?.severity)
-                        }
+            res.on("end", async () => {
+                try {
+                    // do something with JSON
+                    resolve(data)
+                } catch (error) {
+                    console.error(error.message);
+                    reject(error.message)
+                };
+            });
+
+        }).on("error", (error) => {
+            console.error(error.message);
+            reject(json)
+        })
+        req.end();
+    })
+}
+const checkRobots = async (fullurl,paths=[]) => {
+    const url = new URL(fullurl)
+    paths.push(url.pathname)
+    try{
+        const robots = await getRobots(new URL("/robots.txt",url))
+        const rl = readline.createInterface({
+            input: Readable.from([robots]),
+            crlfDelay: Infinity
+        })
+        let uaselected = false
+        for await (let line of rl) {
+            if (line.match(/^(#|\s)/)||line.length<1) continue
+            line = line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            line = line.replace(/\\\*/g,".*")
+            if (`User-agent: ${ua}`.match(new RegExp(line))){
+                uaselected = true
+            } else if (line.match(/^User-agent: /)) {
+                uaselected = false
+            }
+            if (!uaselected) continue
+            if (line.startsWith("Disallow: ")) {
+                for (const path of paths) {
+                    const disallow = line.replace(/^Disallow: +/,'^')
+                    if (path.match(new RegExp(disallow))) {
+                        console.error(`${url} not permitted due to robots.txt`)
+                        return false
                     }
                 }
             }
         }
-        const domains = Object.keys(rapid.blocks)
-        if (verbose) console.log("Checking existing blocks for listed servers...")
-        for (const block of blocks) {
-            const domain  = block.domain
-            if (jmList.find(s=>s.domain == domain)) {
-                console.log("***",domain,"is a listed server, but is set to",block.severity)
-                console.log(block.public_comment)
-                console.log(block.private_comment)
-                const ans = (del)? 'y':await askQuestion("Do you want to delete this entry (y/N)? ");
-                if (ans.toLowerCase() == 'y') {
-                    await (new Promise(resolve => setTimeout(resolve, 1000)))
-                    const r = await deleteBlock(block.id)
-                    if (r.error) {
-                        console.log(r.error)
+        rl.close()
+    } catch (e) {
+    }
+    return true
+}
+
+checkRobots("https://rapidblock.org",["/blocklist.json","/blocklist.json.sig","/rapidblock.pub"]).then(r=>{
+    if (!r) {
+        process.exit()
+    }
+    getRapidBlocks().then(rapid=>{
+        getAllBlocks().then(async blocks=>{
+            const jmList = (await checkRobots("https://api.joinmastodon.org/servers"))? await joinMastodonServers() : [];
+            if (birdsites && checkRobots("https://api.fediverse.observer")) {
+                const bbList = await birdSiteServers();
+                for (const bb of bbList.data.nodes) {
+                    const domain = bb.domain
+                    const block = blocks.find(block=>block.domain==domain)
+                    if (!block) {
+                        const isSub = blocks.find(b=>domain.endsWith(`.${b.domain}`))
+                        if (isSub?.severity) {
+                            if (verbose) {
+                                console.log(':',domain,`(birdsitelive)`,': already blocked under',isSub.domain,':',isSub.severity,isSub.public_comment)
+                            }
+                            continue
+                        }
+                        console.log('+',domain,':',"birdsitelive")
+                        if (jmList.find(s=>s.domain == domain)) {
+                            console.log("*** This is a listed server. ***")
+                        }
+                        const ans = (add||bsadd)? 'y':await askQuestion("Do you want to add this entry (y/N)? ");
+                        if (ans.toLowerCase() == 'y') {
+                            await (new Promise(resolve => setTimeout(resolve, 1000)))
+                            const r = await setBlock(domain,"Third-party bots","birdsitelive")
+                            if (r.error) {
+                                console.log('!',domain,':',r.error,r.existing_domain_block?.domain,r.existing_domain_block?.severity)
+                            }
+                        }
                     }
                 }
             }
-        }
-        for (const domain of domains) {
-            const block = blocks.find(block=>block.domain==domain)
-            if (block) {
-                if (block.severity != "suspend" && rapid.blocks[domain].isBlocked) {
-                    if (!update_limit&&block.severity=="silence") {
-                        if (verbose) {
-                            console.log('>',domain,'is already set to',block.severity,'-',block.public_comment)
-                            if (block.private_comment) console.log('  Notes: ',block.private_comment)
-                        }
-                        continue
-                    }
-                    console.log('>',domain,'is already set to',block.severity,'-',block.public_comment)
-                    if (block.private_comment) console.log('  Notes: ',block.private_comment)
-                    const ans = (mod)? 'y':await askQuestion("Do you want to update this entry to suspend (y/N)? ");
-                    if (ans.toLowerCase() == 'y') {
-                        await (new Promise(resolve => setTimeout(resolve, 1000)))
-                        const r = await setBlock(domain,rapid.blocks[domain].reason,'rapidblock.org',block.id)
-                        if (r.error) {
-                            console.log('!',domain,':',r.error,r.existing_domain_block?.domain)
-                        } else {
-                            console.log('>',domain,':',r.domain,r.severity,r.private_comment,r.public_comment)
-                        }
-                    }
-                } else if (rapid.blocks[domain].isBlocked && !block.public_comment && rapid.blocks[domain].reason) {
-                        await (new Promise(resolve => setTimeout(resolve, 1000)))
-                        const r = await setBlock(domain,rapid.blocks[domain].reason,'rapidblock.org',block.id)
-                        if (r.error) {
-                            console.log('!',domain,':',r.error,r.existing_domain_block?.domain)
-                        } else {
-                            console.log('>',domain,':',r.domain,r.severity,r.private_comment,r.public_comment)
-                        }
-                } else if (!rapid.blocks[domain].isBlocked) {
-                    console.log('-',block.id,domain,'is not longer blocked, but is set to:',block.severity,block.public_comment,block.private_comment)
+            const domains = Object.keys(rapid.blocks)
+            if (verbose) console.log("Checking existing blocks for listed servers...")
+            for (const block of blocks) {
+                const domain  = block.domain
+                if (jmList.find(s=>s.domain == domain)) {
+                    console.log("***",domain,"is a listed server, but is set to",block.severity)
+                    console.log(block.public_comment)
+                    console.log(block.private_comment)
                     const ans = (del)? 'y':await askQuestion("Do you want to delete this entry (y/N)? ");
                     if (ans.toLowerCase() == 'y') {
                         await (new Promise(resolve => setTimeout(resolve, 1000)))
@@ -500,30 +557,74 @@ getRapidBlocks().then(rapid=>{
                         }
                     }
                 }
-            } else if (rapid.blocks[domain].isBlocked) {
-                const isSub = blocks.find(b=>domain.endsWith(`.${b.domain}`))
-                if (isSub?.severity) {
-                    if (verbose) {
-                        console.log(':',domain,`(${rapid.blocks[domain].reason})`,': already blocked under',isSub.domain,':',isSub.severity,isSub.public_comment)
+            }
+            for (const domain of domains) {
+                const block = blocks.find(block=>block.domain==domain)
+                if (block) {
+                    if (block.severity != "suspend" && rapid.blocks[domain].isBlocked) {
+                        if (!update_limit&&block.severity=="silence") {
+                            if (verbose) {
+                                console.log('>',domain,'is already set to',block.severity,'-',block.public_comment)
+                                if (block.private_comment) console.log('  Notes: ',block.private_comment)
+                            }
+                            continue
+                        }
+                        console.log('>',domain,'is already set to',block.severity,'-',block.public_comment)
+                        if (block.private_comment) console.log('  Notes: ',block.private_comment)
+                        const ans = (mod)? 'y':await askQuestion("Do you want to update this entry to suspend (y/N)? ");
+                        if (ans.toLowerCase() == 'y') {
+                            await (new Promise(resolve => setTimeout(resolve, 1000)))
+                            const r = await setBlock(domain,rapid.blocks[domain].reason,'rapidblock.org',block.id)
+                            if (r.error) {
+                                console.log('!',domain,':',r.error,r.existing_domain_block?.domain)
+                            } else {
+                                console.log('>',domain,':',r.domain,r.severity,r.private_comment,r.public_comment)
+                            }
+                        }
+                    } else if (rapid.blocks[domain].isBlocked && !block.public_comment && rapid.blocks[domain].reason) {
+                            await (new Promise(resolve => setTimeout(resolve, 1000)))
+                            const r = await setBlock(domain,rapid.blocks[domain].reason,'rapidblock.org',block.id)
+                            if (r.error) {
+                                console.log('!',domain,':',r.error,r.existing_domain_block?.domain)
+                            } else {
+                                console.log('>',domain,':',r.domain,r.severity,r.private_comment,r.public_comment)
+                            }
+                    } else if (!rapid.blocks[domain].isBlocked) {
+                        console.log('-',block.id,domain,'is not longer blocked, but is set to:',block.severity,block.public_comment,block.private_comment)
+                        const ans = (del)? 'y':await askQuestion("Do you want to delete this entry (y/N)? ");
+                        if (ans.toLowerCase() == 'y') {
+                            await (new Promise(resolve => setTimeout(resolve, 1000)))
+                            const r = await deleteBlock(block.id)
+                            if (r.error) {
+                                console.log(r.error)
+                            }
+                        }
                     }
-                    continue
-                }
+                } else if (rapid.blocks[domain].isBlocked) {
+                    const isSub = blocks.find(b=>domain.endsWith(`.${b.domain}`))
+                    if (isSub?.severity) {
+                        if (verbose) {
+                            console.log(':',domain,`(${rapid.blocks[domain].reason})`,': already blocked under',isSub.domain,':',isSub.severity,isSub.public_comment)
+                        }
+                        continue
+                    }
 
-                console.log('+',domain,':',rapid.blocks[domain].reason)
-                const impact = await getBlockImpact(domain)
-                console.log(` ${impact.find(s=>s.key=="instance_followers").total} followers & ${impact.find(s=>s.key=="instance_follows").total} follows`)
-                if (jmList.find(s=>s.domain == domain)) {
-                    console.log("*** This is a listed server. ***")
-                }
-                const ans = (add)? 'y':await askQuestion("Do you want to add this entry (y/N)? ");
-                if (ans.toLowerCase() == 'y') {
-                    await (new Promise(resolve => setTimeout(resolve, 1000)))
-                    const r = await setBlock(domain,rapid.blocks[domain].reason,'rapidblock.org')
-                    if (r.error) {
-                        console.log('!',domain,':',r.error,r.existing_domain_block?.domain,r.existing_domain_block?.severity)
+                    console.log('+',domain,':',rapid.blocks[domain].reason)
+                    const impact = await getBlockImpact(domain)
+                    console.log(` ${impact.find(s=>s.key=="instance_followers").total} followers & ${impact.find(s=>s.key=="instance_follows").total} follows`)
+                    if (jmList.find(s=>s.domain == domain)) {
+                        console.log("*** This is a listed server. ***")
+                    }
+                    const ans = (add)? 'y':await askQuestion("Do you want to add this entry (y/N)? ");
+                    if (ans.toLowerCase() == 'y') {
+                        await (new Promise(resolve => setTimeout(resolve, 1000)))
+                        const r = await setBlock(domain,rapid.blocks[domain].reason,'rapidblock.org')
+                        if (r.error) {
+                            console.log('!',domain,':',r.error,r.existing_domain_block?.domain,r.existing_domain_block?.severity)
+                        }
                     }
                 }
             }
-        }
+        }).catch(e=>console.error(`Error: ${e}`))
     }).catch(e=>console.error(`Error: ${e}`))
 }).catch(e=>console.error(`Error: ${e}`))
