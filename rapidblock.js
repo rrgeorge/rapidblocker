@@ -609,7 +609,11 @@ checkRobots("https://rapidblock.org",["/blocklist.json","/blocklist.json.sig","/
                         continue
                     }
 
-                    console.log('+',domain,':',rapid.blocks[domain].reason)
+                    if (verbose) {
+                        console.log('+',domain,': [ Reason:',rapid.blocks[domain].reason, 'Tags:', rapid.blocks[domain].tags.join(', '), ']')
+                    } else {
+                        console.log('+',domain,':',rapid.blocks[domain].reason)
+                    }
                     const impact = await getBlockImpact(domain)
                     console.log(` ${impact.find(s=>s.key=="instance_followers").total} followers & ${impact.find(s=>s.key=="instance_follows").total} follows`)
                     if (jmList.find(s=>s.domain == domain)) {
