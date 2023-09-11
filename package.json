@@ -4,7 +4,7 @@
   "description": "rapid blocklist updater",
   "main": "rapidblock.js",
   "bin": {
-    "rapidblock": "rapidblock.js"
+    "rapidblocker": "rapidblock.js"
   },
   "devDependencies": {},
   "scripts": {
