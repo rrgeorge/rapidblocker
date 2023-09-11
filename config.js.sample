@@ -1,0 +1,50 @@
+const instance="https://example.com"
+const api_token="<api token with admin permissions>"
+
+// Threshold for consensus among % of sources
+const threshold=80
+// allowlist domains to skip
+const allowlist = [ "example.com" ]
+// List of sources to pull from
+/*
+For CSV lists use the format: 
+    {
+        csv: true,
+        src: "<full url>",
+        name: "<friendly name>"
+    },
+    // must have 'csv' set to true to use the csv processor
+
+For Mastodon instances use the format:
+    {
+        src: "<domain name>",
+        name: "<friendly name>"
+    }
+    // Can optionally have the attribue 'key' to inclide an api token for non-public blocklists
+
+Any source can add the attribue 'nuke' set to true to automatically block all entries from that source
+*/
+const sources=[
+    {
+        csv: true,
+        src: "https://example.com/nuke.txt",
+        name: "Example Nuke",
+        nuke: true
+    },
+    {
+        csv: true,
+        src: "https://example.com/blocklist.csv",
+        name: "Example Blocklist",
+    },
+    {
+        src: "example.com",
+        name: "Example Mastodon Site",
+    },
+    {
+        src: "example.com",
+        name: "Example Non-Public Mastodon",
+        key: "apiKey123456789"
+    }
+]
+
+module.exports = { instance, api_token, threshold, sources }
